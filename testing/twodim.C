@@ -19,14 +19,16 @@
 
 using namespace TMVA;
 // The event tree containing labelled MC data with sqrt_s, chisq and mcSignal features
-const TString fname = "/home/besuser1/Tommaso/MC/data/finalData/feat4/inclmc12.root";
+const TString fname = "./inclmc12.root";
 
 
 Double_t cutL = 3.065, cutR = 3.112, cutChi = 15.94;   //cuts on energy and cut on chisq
 Int_t S = 0, B = 0;
 Double_t significance;
 Double_t SoverB;
-
+Double_t sEff, bRej;
+auto hs = new TH1F("signal", "signal", 100, cutL, cutR);
+auto hb = new TH1F("bakground", "background", 100, cutL, cutR);
 
 
 void twodim(){
@@ -62,13 +64,21 @@ void twodim(){
      theTree->GetEntry(ievt);
      energy = denergy; chi = dchi;
      if(energy > cutL && energy < cutR && chi < cutChi){ // if the event is a positive
-       if(signal == 1) S++;
-       if(signal == 0) B++;
+       if(signal == 1){
+	 S++;
+	 hs -> Fill(energy);
+       }
+       if(signal == 0){
+	 B++;
+	 hb -> Fill(energy);
+       }
      }
      if(signal == 0) totB++;
      if(signal == 1) totS++;
 
    }
+   sEff = (double) S / (double) totS;
+   bRej = 1 - (double)B / (double)totB;
 			 
 
 
@@ -81,7 +91,23 @@ void twodim(){
 
    std::cout << "The statistical significance after the bi-variate cut is S/sqrt(S+B) = " << significance<< std::endl;
    std::cout << "The signal to background ratio after the bi-variate cut is S/B = " << SoverB << "\n" << std::endl;
+   std::cout << "The signal efficiency is " << sEff << std::endl;
+   std::cout << "The background rejection is " << bRej << std::endl;
 
+   TApplication *app = new TApplication("app",0,NULL);
+   TCanvas c2;
+   c2.cd();
+   hs->SetLineColor(kRed);
+   hs->SetFillColor(kRed);
+   hs->SetFillStyle(3004);
+   hb->SetLineColor(kBlue);
+   hb->SetFillColor(kBlue);
+   hb->SetFillStyle(3005);
+   auto STACK = new THStack;
+   STACK->Add(hs);
+   STACK->Add(hb);
+   STACK->Draw("NOSTACK");
+   app -> Run(true);
 
 
 

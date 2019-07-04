@@ -19,7 +19,7 @@
 
 using namespace TMVA;
 // The event tree containing labelled MC data with sqrt_s and mcSignal features
-const TString fname = "/home/besuser1/Tommaso/MC/data/finalData/feat2/inclmc12.root";
+const TString fname = "./inclmc12.root";
 
 Double_t cutLow = 2.5, peak = 3.097, cutHigh = 3.5;    //cut limits in GeV
 Double_t cutStep = 0.005;
@@ -30,14 +30,14 @@ auto cutRight = new Double_t[nCutsR];
 
 auto S = new Int_t[nCutsL * nCutsR];
 auto B = new Int_t[nCutsL * nCutsR];
+auto sigEff = new Double_t[nCutsL * nCutsR];
+auto bkgRej = new Double_t[nCutsL * nCutsR];
 auto significance = new Double_t[nCutsL * nCutsR];
 
 
 
+
 void energy_scan(){
-
-
-   std::cout << " nCutsL: " << nCutsL << " nCutsR: " << nCutsR << std::endl;
 
    // Initialise the cuts and the other arrays
    int x = 0;
@@ -84,6 +84,9 @@ void energy_scan(){
    theTree->SetBranchAddress( "sqrt_s",       &denergy    );
    theTree->SetBranchAddress( "mcSignal",     &signal     );
 
+   // some more statistics
+   Int_t totS = 0, totB = 0;
+
 
    // Loop over the events in the tree
    for(int ievt = 0; ievt < theTree->GetEntries(); ievt++){
@@ -100,22 +103,36 @@ void energy_scan(){
 	   x++;
        }
      }
+     if(signal == 0) totB++;
+     if(signal == 1) totS++;
    }
-
 
    // Calculate the significance of the intervals
-   for(int y = 0; y < nCutsR * nCutsL; y++){  
-     significance[y] = ((double)S[y]) / sqrt((double)(S[y]+B[y]));
+   auto signi = new TGraph2D();   
+   x = 0;
+   for(int l = 0; l < nCutsL; l++){  //for any possible cut interval
+     for(int r = 0; r < nCutsR; r++){ 
+       significance[x] = ((double)S[x]) / sqrt((double)(S[x]+B[x]));
+       sigEff[x] = (double)S[x] / (double)totS;
+       bkgRej[x] = (double)(totB-B[x])/ (double)totB;
+       signi -> SetPoint(x, cutLeft[l], cutRight[r], significance[x]);
+       x++;
+     }
    }
    
+   Double_t sEff, bRej;
    // Find the best significance
    Double_t bestCutL, bestCutR, bestS = 0;
    Int_t L, R;
+   Double_t SoverB;
    x = 0;
    for(int l = 0; l < nCutsL; l++){  
      for(int r = 0; r < nCutsR; r++){
        if(significance[x] > bestS){
 	 bestS = significance[x];
+	 sEff = sigEff[x];
+	 bRej = bkgRej[x];
+	 SoverB = ((Double_t)S[x]) / ((Double_t)B[x]);
 	 L = l;
 	 R = r;
        }
@@ -125,7 +142,44 @@ void energy_scan(){
    bestCutL = cutLeft[L];
    bestCutR = cutRight[R];
 
-   std::cout << "The best separating interval is [" << bestCutL << ", " << bestCutR << "]" << std::endl;
+   auto hs = new TH1F("signal", "signal", 100, bestCutL, bestCutR);
+   auto hb = new TH1F("bakground", "background", 100, bestCutL, bestCutR);
+
+   cout << "Filling histogram..." << endl;
+   for(int ievt = 0; ievt < theTree->GetEntries(); ievt++){
+     theTree->GetEntry(ievt);
+     if(ievt % 10000 == 0) std::cout << "---Processing event " << ievt << std::endl;
+     energy = denergy;
+     if(energy < bestCutR && energy > bestCutL){
+       if(signal == 0) hb -> Fill(energy);
+       if(signal == 1) hs -> Fill(energy);
+     }
+   }
+   std::cout << "\nTotal signal events: " << totS << ", total background events: " << totB << std::endl;
+   std::cout << "The best separating interval is I = [" << bestCutL << ", " << bestCutR << "] GeV" << std::endl;
+   std::cout << "The statistical significance after the cut is S/sqrt(S+B) = " << bestS << std::endl;
+   std::cout << "The signal to background ratio after the cut is S/B = " << SoverB << "\n" << std::endl;
+   cout << "The signal efficiency is " << sEff << endl;
+   cout << "The background rejection is " << bRej << endl; 
+
+   TApplication *app = new TApplication("app",0,NULL);
+   TCanvas c1;
+   c1.cd();
+   signi -> SetLineWidth(2);
+   signi -> Draw("TRI2");
+   TCanvas c2;
+   c2.cd();
+   hs->SetLineColor(kRed);
+   hs->SetFillColor(kRed);
+   hs->SetFillStyle(3004);
+   hb->SetLineColor(kBlue);
+   hb->SetFillColor(kBlue);
+   hb->SetFillStyle(3005);
+   auto STACK = new THStack;
+   STACK->Add(hs);
+   STACK->Add(hb);
+   STACK->Draw("NOSTACK");
+   app -> Run(true);
 
 
 
